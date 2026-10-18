@@ -1,0 +1,14 @@
+{
+  "input_mode": "observe",
+  "controller": "auto",
+  "monitor": "",
+  "activation_buttons": ["BTN_THUMBL", "BTN_THUMBR"],
+  "hold_seconds": 1.0,
+  "dead_zone": 0.24,
+  "direction_threshold": 0.55,
+  "repeat_delay": 0.35,
+  "repeat_interval": 0.12,
+  "pointer_speed": 900.0,
+  "scroll_speed": 8.0,
+  "keyboard_config": "end4-pC"
+}
