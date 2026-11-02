@@ -105,6 +105,20 @@ class InstallationTests(unittest.TestCase):
             self.silent(update, self.home)
         self.assertEqual(path.read_text(), 'user edit\n')
 
+    def test_update_keeps_an_edited_configuration(self):
+        self.silent(install, self.home, self.backup)
+        config = self.home / '.config/hyprcontroller/overlay.json'
+        config.write_text('{"input_mode": "bridge"}')
+        self.silent(update, self.home)
+        self.assertEqual(config.read_text(), '{"input_mode": "bridge"}')
+
+    def test_update_does_not_recreate_a_deleted_configuration(self):
+        self.silent(install, self.home, self.backup)
+        config = self.home / '.config/hyprcontroller/overlay.json'
+        config.unlink()
+        self.silent(update, self.home)
+        self.assertFalse(config.exists())
+
     def legacy_install_without_docs(self):
         self.silent(install, self.home, self.backup)
         app = self.home / '.local/share/hyprcontroller-overlay'
