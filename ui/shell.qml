@@ -39,6 +39,8 @@ ShellRoot {
     Process {
         id: backend
         command: [Quickshell.env("HYPRCONTROLLER_PYTHON") || "python3", "-m", "hyprcontroller.backend"]
+        // -m puts the working directory first on sys.path, so never leave it in the user's folder.
+        workingDirectory: Quickshell.shellDir
         running: true
         stdinEnabled: true
         stdout: SplitParser {
