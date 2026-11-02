@@ -1,6 +1,6 @@
 # Testing and compatibility
 
-Tests and user reports collected from 7 to 17 October 2026 on one CachyOS desktop running Hyprland. They support an early testing release, with the limits below. The current automated suite contains 90 tests.
+Tests and user reports collected from 7 to 17 October 2026 on one CachyOS desktop running Hyprland. They support an early testing release, with the limits below. The current automated suite contains 96 tests.
 
 ## Tested setup
 
