@@ -446,6 +446,9 @@ class Service:
                 self.pads[path] = pad
                 self.selector.register(device.fd, selectors.EVENT_READ, ('pad', path))
                 changed = True
+            except UInputError as exc:
+                device.close()
+                errors.append(f'{path}: {exc}')
             except OSError as exc:
                 if device is not None:
                     device.close()

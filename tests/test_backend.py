@@ -308,6 +308,20 @@ class DiscoveryCacheTests(unittest.TestCase):
         self.open_device.assert_called_once()
         self.assertEqual(self.service.scan_errors, ['Gamepad: missing activation buttons'])
 
+    def test_virtual_gamepad_failure_is_reported_and_retried(self):
+        self.make_gamepad()
+        self.device.info = (3, 1118, 654, 1)
+        self.service.config = Config(input_mode='bridge')
+        with patch('hyprcontroller.backend.Bridge', side_effect=UInputError('"/dev/uinput" cannot be opened for writing')):
+            self.service.scan()
+        self.assertEqual(self.service.pads, {})
+        self.assertEqual(self.service.scan_errors, [f'{self.path}: "/dev/uinput" cannot be opened for writing'])
+        self.device.close.assert_called_once()
+        with patch('hyprcontroller.backend.Bridge', return_value=Mock()):
+            self.service.scan()
+        self.assertIn(self.path, self.service.pads)
+        self.assertEqual(self.service.scan_errors, [])
+
     def test_unreadable_device_is_retried(self):
         self.open_device.side_effect = [PermissionError(13, 'Access denied'), self.device]
         self.service.scan()
