@@ -1,6 +1,6 @@
 # Testing and compatibility
 
-Tests and user reports collected from 7 to 17 October 2026 on one CachyOS desktop running Hyprland. They support an early testing release, with the limits below. The current automated suite contains 96 tests.
+Tests and user reports collected from 7 to 17 October 2026 on one CachyOS desktop running Hyprland. They support an early testing release, with the limits below. The current automated suite contains 99 tests.
 
 ## Tested setup
 
@@ -21,7 +21,7 @@ Tests and user reports collected from 7 to 17 October 2026 on one CachyOS deskto
 | Check | Evidence |
 | --- | --- |
 | Gesture timing, neutral handoffs, dead zones, and held navigation | Automated recorded-input tests pass |
-| One workspace switch per LB/RB press | Long holds, repeat events, input-state resets, and release/repress covered by regression tests |
+| One workspace switch per LB/RB press | Long holds, repeat events, input-state resets, 1 ms phantom releases, and release/repress covered by regression tests |
 | Persistent capture after A/B and workspace changes | Automated and live synthetic checks pass; working behavior reported in use |
 | Local and Moonlight navigation during gameplay | Reported working across multiple games and Steam Big Picture; individual trials were not logged separately |
 | Circular-stick mouse movement | Smoother motion and continued desktop mode confirmed after the discovery-cache fix |

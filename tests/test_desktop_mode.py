@@ -80,6 +80,36 @@ class PersistentInputTests(unittest.TestCase):
         self.assertEqual(self.machine.tick('remote', other, 12), [])
         self.assertEqual(self.machine.mode, 'desktop')
 
+    def test_one_millisecond_release_during_a_held_bumper_is_not_a_new_press(self):
+        self.state.buttons = {e.BTN_TR}
+        self.assertEqual(self.tick(1), [('workspace', 1)])
+        self.state.buttons = set()
+        self.assertEqual(self.tick(1.014), [])
+        self.state.buttons = {e.BTN_TR}
+        self.assertEqual(self.tick(1.015), [])
+        self.state.buttons = set()
+        self.assertEqual(self.tick(1.165), [])
+        self.state.buttons = {e.BTN_TR}
+        self.assertEqual(self.tick(1.317), [('workspace', 1)])
+
+    def test_fast_real_bumper_tap_still_switches(self):
+        self.state.buttons = {e.BTN_TL}
+        self.assertEqual(self.tick(1), [('workspace', -1)])
+        self.state.buttons = set()
+        self.assertEqual(self.tick(1.05), [])
+        self.state.buttons = {e.BTN_TL}
+        self.assertEqual(self.tick(1.11), [('workspace', -1)])
+
+    def test_brief_release_after_a_view_change_does_not_toggle_again(self):
+        self.machine.viewed('pointer')
+        self.state.buttons = {e.BTN_NORTH}
+        self.assertEqual(self.tick(1), [('view_pending', 'keyboard_toggle')])
+        self.state.buttons = set()
+        self.assertEqual(self.tick(1.2), [('view', 'keyboard_toggle')])
+        self.machine.viewed('pointer')
+        self.state.buttons = {e.BTN_NORTH}
+        self.assertEqual(self.tick(1.201), [])
+
     def test_held_bumper_waits_for_release_after_view_or_input_state_reset(self):
         for view in ('switcher', 'pointer'):
             for button, delta in ((e.BTN_TL, -1), (e.BTN_TR, 1)):
