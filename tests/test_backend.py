@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -164,6 +165,58 @@ class BackendHandoffTests(unittest.TestCase):
             self.service.dispatch_io('feedback', bridge, None)
         self.assertTrue(self.service.running)
         self.assertIn('feedback read failed', self.service.error)
+
+
+class StateOutputTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {'XDG_RUNTIME_DIR': self.tmp.name})
+        self.env.start()
+        self.service = Service(Config())
+        self.read_end, self.write_end = os.pipe()
+        os.set_blocking(self.read_end, False)
+        os.set_blocking(self.write_end, False)
+        self.stdout = patch('hyprcontroller.backend.sys.stdout', Mock(fileno=lambda: self.write_end))
+        self.stdout.start()
+
+    def tearDown(self):
+        self.stdout.stop()
+        for fd in (self.read_end, self.write_end):
+            with contextlib.suppress(OSError):
+                os.close(fd)
+        self.service.selector.close()
+        self.env.stop(); self.tmp.cleanup()
+
+    def drain(self):
+        received = b''
+        while True:
+            try:
+                chunk = os.read(self.read_end, 65536)
+            except BlockingIOError:
+                self.service.flush_state()
+                if not self.service.unsent_state and not self.service.newest_state:
+                    with contextlib.suppress(BlockingIOError):
+                        received += os.read(self.read_end, 65536)
+                    return received
+                continue
+            received += chunk
+
+    def test_full_pipe_does_not_block_and_ui_gets_only_complete_states_ending_with_the_newest(self):
+        self.service.desktop.data = {'windows': [{'title': 'x' * 200000}]}
+        for sequence in range(5):
+            self.service.error_sequence = sequence
+            self.service.emit()
+        self.assertTrue(self.service.running)
+        lines = self.drain().splitlines()
+        states = [json.loads(line) for line in lines]
+        self.assertEqual(states[0]['error_sequence'], 0)
+        self.assertEqual(states[-1]['error_sequence'], 4)
+        self.assertLess(len(states), 5)
+
+    def test_closed_ui_pipe_stops_the_service(self):
+        os.close(self.read_end)
+        self.service.emit()
+        self.assertFalse(self.service.running)
 
 
 class DiscoveryTests(unittest.TestCase):
