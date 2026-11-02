@@ -625,7 +625,10 @@ class Service:
                 line, self.event_buffer = self.event_buffer.split(b'\n', 1)
                 name = line.split(b'>>', 1)[0]
                 if name == b'configreloaded':
-                    configure_overlay(True)
+                    try:
+                        configure_overlay(True)
+                    except DesktopError as exc:
+                        self.fail(f'Could not reapply the overlay rule: {exc}')
                 if name in (b'workspace', b'workspacev2', b'focusedmon', b'focusedmonv2', b'activewindow',
                             b'activewindowv2', b'openwindow', b'closewindow', b'movewindow', b'movewindowv2',
                             b'windowtitle', b'windowtitlev2', b'monitorremoved', b'monitoradded', b'fullscreen'):

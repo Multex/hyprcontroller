@@ -139,6 +139,16 @@ class BackendHandoffTests(unittest.TestCase):
         self.assertEqual(self.service.refresh_at, 10)
         self.assertEqual(self.service.machine.mode, 'idle')
 
+    def test_failed_overlay_rule_after_config_reload_keeps_the_service_running(self):
+        self.service.machine.reset()
+        self.service.events = Mock()
+        self.service.events.recv.return_value = b'configreloaded>>\nworkspacev2>>2,2\n'
+        with patch('hyprcontroller.backend.configure_overlay', side_effect=DesktopError('timed out')), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.service.dispatch_io('events', None, None)
+        self.assertIn('timed out', self.service.error)
+        self.assertIsNotNone(self.service.refresh_at)
+
     def test_rumble_handshake_failure_keeps_session_alive_and_processes_later_requests(self):
         self.service.open()
         for code in (e.UI_FF_UPLOAD, e.UI_FF_ERASE):
