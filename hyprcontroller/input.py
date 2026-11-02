@@ -3,6 +3,9 @@ from dataclasses import dataclass, field
 from evdev import ecodes as e
 
 
+BOUNCE_SECONDS = 0.04
+
+
 @dataclass
 class PadState:
     buttons: set = field(default_factory=set)
@@ -63,6 +66,8 @@ class ModeController:
         self.spent = set()
         self.previous = set()
         self.workspace_held = set()
+        self.held_buttons = set()
+        self.released_at = {}
         self.last_direction = None
         self.repeat_at = 0
         self.exit_action = 'cancel'
@@ -89,6 +94,8 @@ class ModeController:
         self.holds.clear()
         self.previous.clear()
         self.workspace_held.clear()
+        self.held_buttons.clear()
+        self.released_at.clear()
         self.last_direction = None
 
     def request_view(self, action):
@@ -110,6 +117,8 @@ class ModeController:
         self.spent.clear()
         self.previous.clear()
         self.workspace_held.clear()
+        self.held_buttons.clear()
+        self.released_at.clear()
         self.last_direction = None
         self.view = 'switcher'
         self.pending_view = None
@@ -144,8 +153,13 @@ class ModeController:
                 self.reset()
                 return [('close', action)]
             return []
+        for code in self.held_buttons - state.buttons:
+            self.released_at[code] = now
+        self.held_buttons = set(state.buttons)
+        # Some pads report a 1 ms release while a button is still held; that is not a new press.
+        bounced = {code for code, at in self.released_at.items() if now - at < BOUNCE_SECONDS}
         workspace_buttons = state.buttons & {e.BTN_TL, e.BTN_TR}
-        workspace_pressed = workspace_buttons - self.workspace_held
+        workspace_pressed = workspace_buttons - self.workspace_held - bounced
         self.workspace_held = workspace_buttons
         if self.persistent:
             if self.config.gesture <= state.buttons:
@@ -159,7 +173,7 @@ class ModeController:
                 if state.neutral(self.config.dead_zone):
                     return [('view', self.pending_view)]
                 return []
-        pressed = state.buttons - self.previous
+        pressed = state.buttons - self.previous - bounced
         self.previous = set(state.buttons)
         if self.persistent:
             target = None

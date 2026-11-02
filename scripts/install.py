@@ -188,8 +188,12 @@ def update(home):
     if app.is_symlink() or app.resolve() != app:
         raise RuntimeError('Installed application directory changed')
     records = {r['path']: r for r in manifest['files']}
+    config = home / '.config/hyprcontroller/overlay.json'
     for record in records.values():
         path = Path(record['path'])
+        # Update never writes the configuration, and editing it is expected.
+        if path == config:
+            continue
         if not path.is_relative_to(home) or not path.is_file() or path.is_symlink() or \
                 str(path.resolve()) != record.get('resolved_path', str(path)) or \
                 digest(path) != record['sha256'] or path.stat().st_mode & 0o777 != record['mode']:

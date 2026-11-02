@@ -87,6 +87,8 @@ class Service:
         self.overlay_configured = False
         self.event_buffer = b''
         self.stdin_buffer = b''
+        self.unsent_state = b''
+        self.newest_state = None
         self.clients = {}
         self.refresh_at = None
         self.scan_at = 0
@@ -131,8 +133,19 @@ class Service:
                 'access_errors': self.scan_errors, **self.data()}
 
     def emit(self):
+        self.newest_state = (json.dumps(self.state(), ensure_ascii=False) + '\n').encode()
+        self.flush_state()
+
+    def flush_state(self):
+        # Waiting on a full pipe would also stop the heartbeat check, so a slow UI just skips to the newest state.
         try:
-            print(json.dumps(self.state(), ensure_ascii=False), flush=True)
+            while self.unsent_state or self.newest_state:
+                if not self.unsent_state:
+                    self.unsent_state, self.newest_state = self.newest_state, None
+                sent = os.write(sys.stdout.fileno(), self.unsent_state)
+                self.unsent_state = self.unsent_state[sent:]
+        except BlockingIOError:
+            pass
         except BrokenPipeError:
             self.running = False
 
@@ -433,6 +446,9 @@ class Service:
                 self.pads[path] = pad
                 self.selector.register(device.fd, selectors.EVENT_READ, ('pad', path))
                 changed = True
+            except UInputError as exc:
+                device.close()
+                errors.append(f'{path}: {exc}')
             except OSError as exc:
                 if device is not None:
                     device.close()
@@ -525,6 +541,7 @@ class Service:
         self.socket.setblocking(False)
         self.selector.register(self.socket, selectors.EVENT_READ, ('listen', None))
         os.set_blocking(sys.stdin.fileno(), False)
+        os.set_blocking(sys.stdout.fileno(), False)
         self.selector.register(sys.stdin, selectors.EVENT_READ, ('stdin', None))
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, lambda *_: setattr(self, 'running', False))
@@ -608,7 +625,10 @@ class Service:
                 line, self.event_buffer = self.event_buffer.split(b'\n', 1)
                 name = line.split(b'>>', 1)[0]
                 if name == b'configreloaded':
-                    configure_overlay(True)
+                    try:
+                        configure_overlay(True)
+                    except DesktopError as exc:
+                        self.fail(f'Could not reapply the overlay rule: {exc}')
                 if name in (b'workspace', b'workspacev2', b'focusedmon', b'focusedmonv2', b'activewindow',
                             b'activewindowv2', b'openwindow', b'closewindow', b'movewindow', b'movewindowv2',
                             b'windowtitle', b'windowtitlev2', b'monitorremoved', b'monitoradded', b'fullscreen'):
@@ -656,6 +676,7 @@ class Service:
             while self.running:
                 for key, _ in self.selector.select(0.016):
                     self.dispatch_io(*key.data, key.fileobj)
+                self.flush_state()
                 now = time.monotonic()
                 if now - self.last_heartbeat > 3:
                     self.fail('Overlay stopped responding; releasing the controller')
