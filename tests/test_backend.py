@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -138,6 +139,16 @@ class BackendHandoffTests(unittest.TestCase):
         self.assertEqual(self.service.refresh_at, 10)
         self.assertEqual(self.service.machine.mode, 'idle')
 
+    def test_failed_overlay_rule_after_config_reload_keeps_the_service_running(self):
+        self.service.machine.reset()
+        self.service.events = Mock()
+        self.service.events.recv.return_value = b'configreloaded>>\nworkspacev2>>2,2\n'
+        with patch('hyprcontroller.backend.configure_overlay', side_effect=DesktopError('timed out')), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.service.dispatch_io('events', None, None)
+        self.assertIn('timed out', self.service.error)
+        self.assertIsNotNone(self.service.refresh_at)
+
     def test_rumble_handshake_failure_keeps_session_alive_and_processes_later_requests(self):
         self.service.open()
         for code in (e.UI_FF_UPLOAD, e.UI_FF_ERASE):
@@ -164,6 +175,58 @@ class BackendHandoffTests(unittest.TestCase):
             self.service.dispatch_io('feedback', bridge, None)
         self.assertTrue(self.service.running)
         self.assertIn('feedback read failed', self.service.error)
+
+
+class StateOutputTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {'XDG_RUNTIME_DIR': self.tmp.name})
+        self.env.start()
+        self.service = Service(Config())
+        self.read_end, self.write_end = os.pipe()
+        os.set_blocking(self.read_end, False)
+        os.set_blocking(self.write_end, False)
+        self.stdout = patch('hyprcontroller.backend.sys.stdout', Mock(fileno=lambda: self.write_end))
+        self.stdout.start()
+
+    def tearDown(self):
+        self.stdout.stop()
+        for fd in (self.read_end, self.write_end):
+            with contextlib.suppress(OSError):
+                os.close(fd)
+        self.service.selector.close()
+        self.env.stop(); self.tmp.cleanup()
+
+    def drain(self):
+        received = b''
+        while True:
+            try:
+                chunk = os.read(self.read_end, 65536)
+            except BlockingIOError:
+                self.service.flush_state()
+                if not self.service.unsent_state and not self.service.newest_state:
+                    with contextlib.suppress(BlockingIOError):
+                        received += os.read(self.read_end, 65536)
+                    return received
+                continue
+            received += chunk
+
+    def test_full_pipe_does_not_block_and_ui_gets_only_complete_states_ending_with_the_newest(self):
+        self.service.desktop.data = {'windows': [{'title': 'x' * 200000}]}
+        for sequence in range(5):
+            self.service.error_sequence = sequence
+            self.service.emit()
+        self.assertTrue(self.service.running)
+        lines = self.drain().splitlines()
+        states = [json.loads(line) for line in lines]
+        self.assertEqual(states[0]['error_sequence'], 0)
+        self.assertEqual(states[-1]['error_sequence'], 4)
+        self.assertLess(len(states), 5)
+
+    def test_closed_ui_pipe_stops_the_service(self):
+        os.close(self.read_end)
+        self.service.emit()
+        self.assertFalse(self.service.running)
 
 
 class DiscoveryTests(unittest.TestCase):
@@ -254,6 +317,20 @@ class DiscoveryCacheTests(unittest.TestCase):
         self.service.scan()
         self.open_device.assert_called_once()
         self.assertEqual(self.service.scan_errors, ['Gamepad: missing activation buttons'])
+
+    def test_virtual_gamepad_failure_is_reported_and_retried(self):
+        self.make_gamepad()
+        self.device.info = (3, 1118, 654, 1)
+        self.service.config = Config(input_mode='bridge')
+        with patch('hyprcontroller.backend.Bridge', side_effect=UInputError('"/dev/uinput" cannot be opened for writing')):
+            self.service.scan()
+        self.assertEqual(self.service.pads, {})
+        self.assertEqual(self.service.scan_errors, [f'{self.path}: "/dev/uinput" cannot be opened for writing'])
+        self.device.close.assert_called_once()
+        with patch('hyprcontroller.backend.Bridge', return_value=Mock()):
+            self.service.scan()
+        self.assertIn(self.path, self.service.pads)
+        self.assertEqual(self.service.scan_errors, [])
 
     def test_unreadable_device_is_retried(self):
         self.open_device.side_effect = [PermissionError(13, 'Access denied'), self.device]
